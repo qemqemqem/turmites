@@ -8,8 +8,10 @@ import pygame
 
 # Define constants for the display
 CELL_SIZE = 10
-NUM_CELLS = 100
-SCREEN_SIZE = CELL_SIZE * NUM_CELLS
+NUM_CELLS_WIDE = 150
+NUM_CELLS_HIGH = 100
+SCREEN_SIZE_WIDE = CELL_SIZE * NUM_CELLS_WIDE
+SCREEN_SIZE_HIGH = CELL_SIZE * NUM_CELLS_HIGH
 FPS = 30
 
 # Directions
@@ -18,7 +20,8 @@ RIGHT = 1
 DOWN = 2
 LEFT = 3
 
-NUM_COLORS = 4
+NUM_COLORS = 8
+NUM_STATES_PER_TURMITE = 20
 
 
 def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0) -> List[
@@ -52,10 +55,11 @@ COLORS = [BLACK] + get_color_palette(NUM_COLORS, saturation=random.uniform(0.5, 
 
 
 class Turmite:
-    def __init__(self, x: int, y: int, direction: int, state: int,
+    def __init__(self, x: int, y: int, num_states: int, direction: int, state: int,
                  transition_table: Dict[Tuple[int, int], Tuple[int, str, int]]):
         self.x = x
         self.y = y
+        self.num_states = num_states
         self.direction = direction
         self.state = state
         self.transition_table = transition_table
@@ -117,6 +121,23 @@ def generate_random_transition_table(num_colors: int = -1, num_states: int = -1)
     return transition_table
 
 
+def get_random_turmite() -> Turmite:
+    x = random.randint(0, NUM_CELLS_WIDE - 1)
+    y = random.randint(0, NUM_CELLS_HIGH - 1)
+    direction = random.randint(0, 3)
+    num_states = random.randint(2, NUM_STATES_PER_TURMITE)
+    state = random.randint(0, num_states - 1)
+    transition_table = generate_random_transition_table(num_states=num_states)
+    return Turmite(x, y, num_states, direction, state, transition_table)
+
+
+def create_turmites(n: int) -> List[Turmite]:
+    turmites = []
+    for _ in range(n):
+        turmites.append(get_random_turmite())
+    return turmites
+
+
 def turn(direction: int, turn: str) -> int:
     if turn == 'L':
         return (direction - 1) % 4
@@ -129,25 +150,14 @@ def turn(direction: int, turn: str) -> int:
 
 def move_forward(x: int, y: int, direction: int) -> Tuple[int, int]:
     if direction == UP:
-        return x, (y - 1) % NUM_CELLS
+        return x, (y - 1) % NUM_CELLS_HIGH
     elif direction == RIGHT:
-        return (x + 1) % NUM_CELLS, y
+        return (x + 1) % NUM_CELLS_WIDE, y
     elif direction == DOWN:
-        return x, (y + 1) % NUM_CELLS
+        return x, (y + 1) % NUM_CELLS_HIGH
     elif direction == LEFT:
-        return (x - 1) % NUM_CELLS, y
+        return (x - 1) % NUM_CELLS_WIDE, y
     return x, y
-
-
-def create_turmites(n: int) -> List[Turmite]:
-    turmites = []
-    for _ in range(n):
-        x = random.randint(0, NUM_CELLS - 1)
-        y = random.randint(0, NUM_CELLS - 1)
-        direction = random.choice([UP, RIGHT, DOWN, LEFT])
-        state = random.randint(0, 1)  # assuming there are two states (0 and 1)
-        turmites.append(Turmite(x, y, direction, state, generate_random_transition_table()))
-    return turmites
 
 
 def get_triangle_vertices(x: int, y: int, direction: int) -> List[Tuple[int, int]]:
@@ -174,9 +184,9 @@ def get_triangle_vertices(x: int, y: int, direction: int) -> List[Tuple[int, int
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((SCREEN_SIZE, SCREEN_SIZE))
+    screen = pygame.display.set_mode((SCREEN_SIZE_WIDE, SCREEN_SIZE_HIGH))
     clock = pygame.time.Clock()
-    grid = [[0 for _ in range(NUM_CELLS)] for _ in range(NUM_CELLS)]
+    grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
     turmites: List[Turmite] = create_turmites(10)
 
     serialized_turmites = jsonpickle.encode(turmites, indent=4)
@@ -221,8 +231,8 @@ def main():
             turmite.x, turmite.y = move_forward(turmite.x, turmite.y, turmite.direction)
             turmite.state = next_state
 
-        for row in range(NUM_CELLS):
-            for col in range(NUM_CELLS):
+        for row in range(NUM_CELLS_HIGH):
+            for col in range(NUM_CELLS_WIDE):
                 color = COLORS[grid[row][col]]
                 pygame.draw.rect(screen, color, (col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
@@ -252,12 +262,8 @@ def main():
 
         # Respawn the turmites that are stuck
         for i, turmite in enumerate(turmites):
-            if turmite.turns_stuck > 40:
-                turmites[i] = Turmite(random.randint(0, NUM_CELLS - 1),
-                                      random.randint(0, NUM_CELLS - 1),
-                                      random.choice([UP, RIGHT, DOWN, LEFT]),
-                                      random.randint(0, 1),
-                                      generate_random_transition_table())
+            if turmite.turns_stuck > 100 + random.randint(0, 100):
+                turmites[i] = get_random_turmite()
 
         pygame.display.flip()
         clock.tick(FPS)
