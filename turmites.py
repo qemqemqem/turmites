@@ -59,6 +59,8 @@ class Turmite:
         self.direction = direction
         self.state = state
         self.transition_table = transition_table
+        self.recent_positions = []
+        self.turns_stuck = 0
 
 
 # Example state transition table for the turmites
@@ -193,7 +195,7 @@ def main():
 
     running = True
     while running:
-        if pygame.time.get_ticks() % 100 == 0:
+        if pygame.time.get_ticks() % 100 == 0 and False:
             with open('turmites.json', 'r') as f:
                 print("Decoding turmites...")
                 edited_turmites = jsonpickle.decode(f.read())
@@ -228,7 +230,34 @@ def main():
             pygame.draw.rect(screen, WHITE, (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             # Draw direction triangle
             triangle_vertices = get_triangle_vertices(turmite.x, turmite.y, turmite.direction)
-            pygame.draw.polygon(screen, BLACK, triangle_vertices)  # Draw the triangle in red for visibility
+            pygame.draw.polygon(screen, BLACK, triangle_vertices)  # Draw a triangle for visibility
+
+        # Add to the recent positions of all turmites
+        for turmite in turmites:
+            turmite.recent_positions.append((turmite.x, turmite.y))
+            if len(turmite.recent_positions) > 10:
+                turmite.recent_positions.pop(0)
+
+            # Mark them as stuck if they are stuck
+            if len(set(turmite.recent_positions)) <= 9:
+                turmite.turns_stuck += 1
+            else:
+                turmite.turns_stuck = 0
+
+            # Draw a trail
+            for i, (x, y) in enumerate(turmite.recent_positions):
+                pygame.draw.circle(screen, color=WHITE,
+                                   center=(x * CELL_SIZE + CELL_SIZE * 0.5, y * CELL_SIZE + CELL_SIZE * 0.5),
+                                   radius=CELL_SIZE / 4, )
+
+        # Respawn the turmites that are stuck
+        for i, turmite in enumerate(turmites):
+            if turmite.turns_stuck > 40:
+                turmites[i] = Turmite(random.randint(0, NUM_CELLS - 1),
+                                      random.randint(0, NUM_CELLS - 1),
+                                      random.choice([UP, RIGHT, DOWN, LEFT]),
+                                      random.randint(0, 1),
+                                      generate_random_transition_table())
 
         pygame.display.flip()
         clock.tick(FPS)
