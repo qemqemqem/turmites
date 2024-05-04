@@ -71,6 +71,30 @@ class Turmite:
 # }
 
 
+class TurmiteHandler(jsonpickle.handlers.BaseHandler):
+    def flatten(self, obj, data):
+        # Convert object to a serializable form
+        data['x'] = obj.x
+        data['y'] = obj.y
+        data['direction'] = obj.direction
+        data['state'] = obj.state
+        data['transition_table'] = {f"{k[0]},{k[1]}": v for k, v in obj.transition_table.items()}
+        return data
+
+    def restore(self, obj):
+        # Restore object from serialized form
+        x = obj['x']
+        y = obj['y']
+        direction = obj['direction']
+        state = obj['state']
+        transition_table = {tuple(map(int, k.split(','))): v for k, v in obj['transition_table'].items()}
+        return Turmite(x, y, direction, state, transition_table)
+
+
+# Register the handler for Turmite class
+jsonpickle.handlers.registry.register(Turmite, TurmiteHandler)
+
+
 def generate_random_transition_table(num_colors: int = -1, num_states: int = -1) -> Dict[
     Tuple[int, int], Tuple[int, str, int]]:
     if num_colors == -1:
@@ -154,20 +178,34 @@ def main():
     turmites: List[Turmite] = create_turmites(10)
 
     serialized_turmites = jsonpickle.encode(turmites, indent=4)
-    print(serialized_turmites)
+    # print(serialized_turmites)
 
-    deserialized_turmites = jsonpickle.decode(serialized_turmites)
-    print(deserialized_turmites[0].x, deserialized_turmites[0].y, deserialized_turmites[0].direction,
-          deserialized_turmites[0].state, deserialized_turmites[0].transition_table)
-    reserialized_turmites = jsonpickle.encode(deserialized_turmites, indent=4)
+    with open('turmites.json', 'w') as f:
+        f.write(serialized_turmites)
 
-    # Compare the two strings
-    print(serialized_turmites == reserialized_turmites)
-
+    # deserialized_turmites = jsonpickle.decode(serialized_turmites)
+    # reserialized_turmites = jsonpickle.encode(deserialized_turmites, indent=4)
+    #
+    # # Compare the two strings
+    # print(serialized_turmites == reserialized_turmites)
+    #
     # turmites = deserialized_turmites
 
     running = True
     while running:
+        if pygame.time.get_ticks() % 100 == 0:
+            with open('turmites.json', 'r') as f:
+                print("Decoding turmites...")
+                edited_turmites = jsonpickle.decode(f.read())
+
+                # Copy over positions and states from turmites to edited_turmites
+                for turmite, edited_turmite in zip(turmites, edited_turmites):
+                    edited_turmite.x = turmite.x
+                    edited_turmite.y = turmite.y
+                    edited_turmite.state = turmite.state
+
+                turmites = edited_turmites
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -187,8 +225,7 @@ def main():
                 pygame.draw.rect(screen, color, (col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
         for turmite in turmites:
-            turmite_rect = pygame.draw.rect(screen, WHITE,
-                                            (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+            pygame.draw.rect(screen, WHITE, (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             # Draw direction triangle
             triangle_vertices = get_triangle_vertices(turmite.x, turmite.y, turmite.direction)
             pygame.draw.polygon(screen, BLACK, triangle_vertices)  # Draw the triangle in red for visibility
