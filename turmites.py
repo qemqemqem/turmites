@@ -1,7 +1,7 @@
 import colorsys
 import random
 import sys
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 
 import jsonpickle
 import pygame
@@ -20,8 +20,9 @@ RIGHT = 1
 DOWN = 2
 LEFT = 3
 
-NUM_COLORS = 8
-NUM_STATES_PER_TURMITE = 20
+NUM_COLORS = 3
+NUM_STATES_PER_TURMITE = 8
+PERCENT_DARKNESS = 0.4
 
 
 def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0) -> List[
@@ -65,6 +66,8 @@ class Turmite:
         self.transition_table = transition_table
         self.recent_positions = []
         self.turns_stuck = 0
+        self.id = random.randint(0, sys.maxsize)
+        self.credit_count = 0
 
 
 # Example state transition table for the turmites
@@ -88,6 +91,7 @@ class TurmiteHandler(jsonpickle.handlers.BaseHandler):
         return data
 
     def restore(self, obj):
+        raise NotImplementedError("Restore not implemented")
         # Restore object from serialized form
         x = obj['x']
         y = obj['y']
@@ -113,7 +117,7 @@ def generate_random_transition_table(num_colors: int = -1, num_states: int = -1)
 
     for state in range(num_states):
         for color in range(num_colors):
-            new_color = random.randint(0, num_colors - 1)
+            new_color = 0 if random.uniform(0.0, 1.0) < PERCENT_DARKNESS else random.randint(1, num_colors - 1)
             turn_direction = random.choice(directions)
             next_state = random.randint(0, num_states - 1)
             transition_table[(color, state)] = (new_color, turn_direction, next_state)
@@ -121,14 +125,25 @@ def generate_random_transition_table(num_colors: int = -1, num_states: int = -1)
     return transition_table
 
 
-def get_random_turmite() -> Turmite:
+def get_random_turmite(turmites: Optional[list[Turmite]] = None) -> Turmite:
     x = random.randint(0, NUM_CELLS_WIDE - 1)
     y = random.randint(0, NUM_CELLS_HIGH - 1)
-    direction = random.randint(0, 3)
-    num_states = random.randint(2, NUM_STATES_PER_TURMITE)
-    state = random.randint(0, num_states - 1)
-    transition_table = generate_random_transition_table(num_states=num_states)
-    return Turmite(x, y, num_states, direction, state, transition_table)
+    if random.randint(0, 2) == 0 and turmites is not None:
+        t = random.choice(turmites)
+        t.x = x
+        t.y = y
+        return t
+    elif random.randint(0, 2) == 0 and turmites is not None:
+        t = turmites[0]  # The turmites are periodically sorted based on their credit count
+        t.x = x
+        t.y = y
+        return t
+    else:
+        direction = random.randint(0, 3)
+        num_states = random.randint(2, NUM_STATES_PER_TURMITE)
+        state = random.randint(0, num_states - 1)
+        transition_table = generate_random_transition_table(num_states=num_states)
+        return Turmite(x, y, num_states, direction, state, transition_table)
 
 
 def create_turmites(n: int) -> List[Turmite]:
@@ -187,6 +202,7 @@ def main():
     screen = pygame.display.set_mode((SCREEN_SIZE_WIDE, SCREEN_SIZE_HIGH))
     clock = pygame.time.Clock()
     grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
+    credit_grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
     turmites: List[Turmite] = create_turmites(10)
 
     serialized_turmites = jsonpickle.encode(turmites, indent=4)
@@ -227,6 +243,7 @@ def main():
             current_color = grid[turmite.y][turmite.x]
             write_color, turn_direction, next_state = turmite.transition_table[(current_color, turmite.state)]
             grid[turmite.y][turmite.x] = write_color
+            credit_grid[turmite.y][turmite.x] = turmite.id
             turmite.direction = turn(turmite.direction, turn_direction)
             turmite.x, turmite.y = move_forward(turmite.x, turmite.y, turmite.direction)
             turmite.state = next_state
@@ -249,7 +266,7 @@ def main():
                 turmite.recent_positions.pop(0)
 
             # Mark them as stuck if they are stuck
-            if len(set(turmite.recent_positions)) <= 9:
+            if len(set(turmite.recent_positions)) <= 5:
                 turmite.turns_stuck += 1
             else:
                 turmite.turns_stuck = 0
@@ -263,7 +280,45 @@ def main():
         # Respawn the turmites that are stuck
         for i, turmite in enumerate(turmites):
             if turmite.turns_stuck > 100 + random.randint(0, 100):
-                turmites[i] = get_random_turmite()
+                turmites[i] = get_random_turmite(turmites)
+
+        # Periodic tournament
+        if pygame.time.get_ticks() % 200 == 0:
+            # Iterate over the whole grid
+            for t in turmites:
+                t.credit_count = 0
+            for row in range(NUM_CELLS_HIGH):
+                for col in range(NUM_CELLS_WIDE):
+                    # Get the turmite id
+                    turmite_id = credit_grid[row][col]
+
+                    # If there is a turmite id
+                    if turmite_id != 0:
+                        # Get the turmite
+                        turmite = None
+                        for t in turmites:
+                            if t.id == turmite_id:
+                                turmite = t
+                                break
+                        if turmite is None:
+                            continue
+
+                        # Increment the turmite's credit
+                        turmite.credit_count += 1
+
+                        # Reset the credit grid
+                        credit_grid[row][col] = 0
+
+            # Sort the turmites by credit count
+            turmites = sorted(turmites, key=lambda t: t.credit_count, reverse=True)
+
+            # Print credit counts
+            print("\nTurmite Credits:")
+            for t in turmites:
+                print(f"Turmite {t.id}: {t.credit_count}")
+
+            # Respawn the worst turtle
+            turmites[-1] = get_random_turmite(turmites)
 
         pygame.display.flip()
         clock.tick(FPS)
