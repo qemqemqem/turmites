@@ -12,7 +12,7 @@ NUM_CELLS_WIDE = 150
 NUM_CELLS_HIGH = 100
 SCREEN_SIZE_WIDE = CELL_SIZE * NUM_CELLS_WIDE
 SCREEN_SIZE_HIGH = CELL_SIZE * NUM_CELLS_HIGH
-FPS = 30
+FPS = 60
 
 # Directions
 UP = 0
@@ -20,12 +20,13 @@ RIGHT = 1
 DOWN = 2
 LEFT = 3
 
-NUM_COLORS = 3
-NUM_STATES_PER_TURMITE = 8
+NUM_COLORS = 4
+NUM_STATES_PER_TURMITE = 3
 PERCENT_DARKNESS = 0.4
 
 
-def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0) -> List[
+def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0,
+                      random_jitter: float = 0.0) -> List[
     Tuple[int, int, int]]:
     colors = []
     for i in range(num_colors):
@@ -33,6 +34,8 @@ def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float
         hue = (hue + hue_offset) % 1.0  # Apply offset
         r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
         rgb = (int(r * 255), int(g * 255), int(b * 255))
+        # Apply some random jitter
+        rgb = tuple(int(min(255, max(0, c + int(random.uniform(-random_jitter, random_jitter) * 255)))) for c in rgb)
         colors.append(rgb)
     return colors
 
@@ -253,8 +256,9 @@ def main():
                 color = COLORS[grid[row][col]]
                 pygame.draw.rect(screen, color, (col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
-        for turmite in turmites:
-            pygame.draw.rect(screen, WHITE, (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
+        for i, turmite in enumerate(turmites):
+            pygame.draw.rect(screen, YELLOW if i == 0 else WHITE,
+                             (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             # Draw direction triangle
             triangle_vertices = get_triangle_vertices(turmite.x, turmite.y, turmite.direction)
             pygame.draw.polygon(screen, BLACK, triangle_vertices)  # Draw a triangle for visibility
@@ -273,7 +277,7 @@ def main():
 
             # Draw a trail
             for i, (x, y) in enumerate(turmite.recent_positions):
-                pygame.draw.circle(screen, color=WHITE,
+                pygame.draw.circle(screen, WHITE,
                                    center=(x * CELL_SIZE + CELL_SIZE * 0.5, y * CELL_SIZE + CELL_SIZE * 0.5),
                                    radius=CELL_SIZE / 4, )
 
@@ -304,10 +308,13 @@ def main():
                             continue
 
                         # Increment the turmite's credit
-                        turmite.credit_count += 1
+                        # turmite.credit_count += grid[row][col]  # BLACK is worth nothing I guess
+                        turmite.credit_count += 2 if grid[row][col] == 0 else 1  # BLACK IS THE BEST COLOR
+                        turmite.credit_count += 1  # All colors are valuable
 
-                        # Reset the credit grid
-                        credit_grid[row][col] = 0
+                        # Reset the credit grid probabilistically, to get exponential decay
+                        if random.randint(0, 2) == 0:
+                            credit_grid[row][col] = 0
 
             # Sort the turmites by credit count
             turmites = sorted(turmites, key=lambda t: t.credit_count, reverse=True)
@@ -317,8 +324,12 @@ def main():
             for t in turmites:
                 print(f"Turmite {t.id}: {t.credit_count}")
 
-            # Respawn the worst turtle
-            turmites[-1] = get_random_turmite(turmites)
+            # Respawn the worst N turmites
+            worst_score = turmites[-1].credit_count
+            for i in range(5):
+                if turmites[-i].credit_count > worst_score * 3:
+                    break  # It's fine
+                turmites[-i] = get_random_turmite(turmites)
 
         pygame.display.flip()
         clock.tick(FPS)
