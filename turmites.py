@@ -14,15 +14,33 @@ SCREEN_SIZE_WIDE = CELL_SIZE * NUM_CELLS_WIDE
 SCREEN_SIZE_HIGH = CELL_SIZE * NUM_CELLS_HIGH
 FPS = 60
 
+# Set seed for random library
+random_seed = random.randint(0, 10_000)
+random.seed(random_seed)
+print(f"Random seed: {random_seed}")
+
 # Directions
 UP = 0
 RIGHT = 1
 DOWN = 2
 LEFT = 3
 
+NUM_TURMITES = 10
+
 NUM_COLORS = 4
 NUM_STATES_PER_TURMITE = 3
 PERCENT_DARKNESS = 0.4
+
+STUCK_THRESHOLD = 9  # If 0, they will never be considered stuck
+STUCK_MEMORY_LEN = 30
+VISUAL_TRAIL_LENGTH = 7
+STUCK_DURATION = 60
+NUM_TOURNAMENT_LOSERS = 0
+TOURNAMENT_THRESHOLD_MULTIPLIER = 3
+
+ALL_SAME_AT_START = True
+ONLY_REGEN_ALL_IF_ALL_STUCK = True
+RENDER_CHAMPION = False
 
 
 def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0,
@@ -129,6 +147,7 @@ def generate_random_transition_table(num_colors: int = -1, num_states: int = -1)
 
 
 def get_random_turmite(turmites: Optional[list[Turmite]] = None) -> Turmite:
+    print("Getting random turmite...")
     x = random.randint(0, NUM_CELLS_WIDE - 1)
     y = random.randint(0, NUM_CELLS_HIGH - 1)
     if random.randint(0, 2) == 0 and turmites is not None:
@@ -149,10 +168,23 @@ def get_random_turmite(turmites: Optional[list[Turmite]] = None) -> Turmite:
         return Turmite(x, y, num_states, direction, state, transition_table)
 
 
-def create_turmites(n: int) -> List[Turmite]:
+def create_turmites(n: int = NUM_TURMITES) -> List[Turmite]:
     turmites = []
-    for _ in range(n):
-        turmites.append(get_random_turmite())
+    if ALL_SAME_AT_START:
+        for i in range(n):
+            if i == 0:
+                turmites.append(get_random_turmite())
+            else:
+                t0 = turmites[0]
+                randx = random.randint(0, NUM_CELLS_WIDE - 1)
+                randy = random.randint(0, NUM_CELLS_HIGH - 1)
+                randdir = random.randint(0, 3)
+                turmites.append(Turmite(randx, randy, t0.num_states, randdir, t0.state, t0.transition_table))
+        print("Initial turmite:")
+        print(turmites[0].transition_table)
+    else:
+        for i in range(n):
+            turmites.append(get_random_turmite())
     return turmites
 
 
@@ -206,7 +238,7 @@ def main():
     clock = pygame.time.Clock()
     grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
     credit_grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
-    turmites: List[Turmite] = create_turmites(10)
+    turmites: List[Turmite] = create_turmites()
 
     serialized_turmites = jsonpickle.encode(turmites, indent=4)
     # print(serialized_turmites)
@@ -257,7 +289,7 @@ def main():
                 pygame.draw.rect(screen, color, (col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
         for i, turmite in enumerate(turmites):
-            pygame.draw.rect(screen, YELLOW if i == 0 else WHITE,
+            pygame.draw.rect(screen, YELLOW if (i == 0 and RENDER_CHAMPION) else WHITE,
                              (turmite.x * CELL_SIZE, turmite.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
             # Draw direction triangle
             triangle_vertices = get_triangle_vertices(turmite.x, turmite.y, turmite.direction)
@@ -266,25 +298,29 @@ def main():
         # Add to the recent positions of all turmites
         for turmite in turmites:
             turmite.recent_positions.append((turmite.x, turmite.y))
-            if len(turmite.recent_positions) > 10:
+            if len(turmite.recent_positions) > STUCK_MEMORY_LEN:
                 turmite.recent_positions.pop(0)
 
             # Mark them as stuck if they are stuck
-            if len(set(turmite.recent_positions)) <= 5:
+            if len(set(turmite.recent_positions)) <= STUCK_THRESHOLD:
                 turmite.turns_stuck += 1
             else:
                 turmite.turns_stuck = 0
 
             # Draw a trail
-            for i, (x, y) in enumerate(turmite.recent_positions):
+            for i, (x, y) in enumerate(turmite.recent_positions[-VISUAL_TRAIL_LENGTH:]):
                 pygame.draw.circle(screen, WHITE,
                                    center=(x * CELL_SIZE + CELL_SIZE * 0.5, y * CELL_SIZE + CELL_SIZE * 0.5),
                                    radius=CELL_SIZE / 4, )
 
         # Respawn the turmites that are stuck
-        for i, turmite in enumerate(turmites):
-            if turmite.turns_stuck > 100 + random.randint(0, 100):
-                turmites[i] = get_random_turmite(turmites)
+        if ONLY_REGEN_ALL_IF_ALL_STUCK:
+            if all(turmite.turns_stuck > STUCK_DURATION for turmite in turmites):
+                turmites = create_turmites(len(turmites))
+        else:
+            for i, turmite in enumerate(turmites):
+                if turmite.turns_stuck > STUCK_DURATION + random.randint(0, STUCK_DURATION):
+                    turmites[i] = get_random_turmite(turmites)
 
         # Periodic tournament
         if pygame.time.get_ticks() % 200 == 0:
@@ -320,16 +356,26 @@ def main():
             turmites = sorted(turmites, key=lambda t: t.credit_count, reverse=True)
 
             # Print credit counts
-            print("\nTurmite Credits:")
-            for t in turmites:
-                print(f"Turmite {t.id}: {t.credit_count}")
+            # print("\nTurmite Credits:")
+            # for t in turmites:
+            #     print(f"Turmite {t.id}: {t.credit_count}")
 
             # Respawn the worst N turmites
             worst_score = turmites[-1].credit_count
-            for i in range(5):
-                if turmites[-i].credit_count > worst_score * 3:
+            for i in range(NUM_TOURNAMENT_LOSERS):
+                if turmites[-i].credit_count > worst_score * TOURNAMENT_THRESHOLD_MULTIPLIER:
                     break  # It's fine
                 turmites[-i] = get_random_turmite(turmites)
+
+        # Keyboard inputs
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_r]:
+            turmites = create_turmites(len(turmites))
+        if keys[pygame.K_c]:
+            grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
+            credit_grid = [[0 for _ in range(NUM_CELLS_WIDE)] for _ in range(NUM_CELLS_HIGH)]
+        if keys[pygame.K_ESCAPE]:
+            running = False
 
         pygame.display.flip()
         clock.tick(FPS)
