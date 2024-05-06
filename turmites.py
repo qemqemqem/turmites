@@ -42,6 +42,11 @@ ALL_SAME_AT_START = True
 ONLY_REGEN_ALL_IF_ALL_STUCK = True
 RENDER_CHAMPION = False
 
+NUM_SEEDS_DARKNESS = 1
+DARKNESS_SLOWNESS = 30
+DARKNESS_MAX_SIZE = 100
+DARKNESS_RANDOM = 0.002
+
 
 def get_color_palette(num_colors: int, saturation: float = 1.0, lightness: float = 0.5, hue_offset: float = 0,
                       random_jitter: float = 0.0) -> List[
@@ -74,6 +79,14 @@ PINK = (255, 192, 203)
 
 COLORS = [BLACK] + get_color_palette(NUM_COLORS, saturation=random.uniform(0.5, 1.0),
                                      lightness=random.uniform(0.4, 0.6), hue_offset=random.random())
+
+
+class SeedOfDarkness:
+    def __init__(self, x: int, y: int):
+        self.x = x
+        self.y = y
+        self.distance = 0
+        self.age = 0
 
 
 class Turmite:
@@ -246,6 +259,10 @@ def main():
     with open('turmites.json', 'w') as f:
         f.write(serialized_turmites)
 
+    points_of_darkness: List[SeedOfDarkness] = [
+        SeedOfDarkness(x=random.randint(0, NUM_CELLS_WIDE - 1), y=random.randint(0, NUM_CELLS_HIGH - 1)) for _ in
+        range(NUM_SEEDS_DARKNESS)]
+
     # deserialized_turmites = jsonpickle.decode(serialized_turmites)
     # reserialized_turmites = jsonpickle.encode(deserialized_turmites, indent=4)
     #
@@ -366,6 +383,22 @@ def main():
                 if turmites[-i].credit_count > worst_score * TOURNAMENT_THRESHOLD_MULTIPLIER:
                     break  # It's fine
                 turmites[-i] = get_random_turmite(turmites)
+
+        # Spread darkness
+        for i, dark_seed in enumerate(points_of_darkness):
+            dark_seed.age += 1
+            if dark_seed.age % DARKNESS_SLOWNESS == 0:
+                for row in range(NUM_CELLS_HIGH):
+                    for col in range(NUM_CELLS_WIDE):
+                        if (abs(row - dark_seed.x) + abs(
+                                col - dark_seed.y)) == dark_seed.distance:
+                            grid[row][col] = 0
+                            if random.uniform(0, 1) < DARKNESS_RANDOM:
+                                grid[row][col] = random.randint(1, NUM_COLORS - 1)
+                dark_seed.distance += 1
+                if dark_seed.distance > DARKNESS_MAX_SIZE + random.randint(0, DARKNESS_MAX_SIZE):
+                    points_of_darkness[i] = SeedOfDarkness(
+                        random.randint(0, NUM_CELLS_WIDE - 1), random.randint(0, NUM_CELLS_HIGH - 1))
 
         # Keyboard inputs
         keys = pygame.key.get_pressed()
