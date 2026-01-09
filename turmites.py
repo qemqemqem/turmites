@@ -7,12 +7,12 @@ import jsonpickle
 import pygame
 
 # Define constants for the display
-CELL_SIZE = 10
-NUM_CELLS_WIDE = 150
-NUM_CELLS_HIGH = 100
+CELL_SIZE = 20
+NUM_CELLS_WIDE = 15
+NUM_CELLS_HIGH = 25
 SCREEN_SIZE_WIDE = CELL_SIZE * NUM_CELLS_WIDE
 SCREEN_SIZE_HIGH = CELL_SIZE * NUM_CELLS_HIGH
-FPS = 60
+FPS = 10
 
 # Set seed for random library
 random_seed = random.randint(0, 10_000)
@@ -25,15 +25,15 @@ RIGHT = 1
 DOWN = 2
 LEFT = 3
 
-NUM_TURMITES = 10
+NUM_TURMITES = 2
 
 NUM_COLORS = 4
 NUM_STATES_PER_TURMITE = 3
-PERCENT_DARKNESS = 0.4
+PERCENT_DARKNESS = 0.35
 
 STUCK_THRESHOLD = 9  # If 0, they will never be considered stuck
 STUCK_MEMORY_LEN = 30
-VISUAL_TRAIL_LENGTH = 7
+VISUAL_TRAIL_LENGTH = 0
 STUCK_DURATION = 60
 NUM_TOURNAMENT_LOSERS = 0
 TOURNAMENT_THRESHOLD_MULTIPLIER = 3
@@ -42,7 +42,7 @@ ALL_SAME_AT_START = True
 ONLY_REGEN_ALL_IF_ALL_STUCK = True
 RENDER_CHAMPION = False
 
-NUM_SEEDS_DARKNESS = 1
+NUM_SEEDS_DARKNESS = 0
 DARKNESS_SLOWNESS = 30
 DARKNESS_MAX_SIZE = 100
 DARKNESS_RANDOM = 0.002
@@ -325,10 +325,11 @@ def main():
                 turmite.turns_stuck = 0
 
             # Draw a trail
-            for i, (x, y) in enumerate(turmite.recent_positions[-VISUAL_TRAIL_LENGTH:]):
-                pygame.draw.circle(screen, WHITE,
-                                   center=(x * CELL_SIZE + CELL_SIZE * 0.5, y * CELL_SIZE + CELL_SIZE * 0.5),
-                                   radius=CELL_SIZE / 4, )
+            if VISUAL_TRAIL_LENGTH > 0:
+                for i, (x, y) in enumerate(turmite.recent_positions[-VISUAL_TRAIL_LENGTH:]):
+                    pygame.draw.circle(screen, WHITE,
+                                       center=(x * CELL_SIZE + CELL_SIZE * 0.5, y * CELL_SIZE + CELL_SIZE * 0.5),
+                                       radius=CELL_SIZE / 4, )
 
         # Respawn the turmites that are stuck
         if ONLY_REGEN_ALL_IF_ALL_STUCK:
